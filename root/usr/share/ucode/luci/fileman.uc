@@ -195,3 +195,18 @@ export function copy(src, dst) {
     return { error: String(e) };
   }
 }
+
+export function touch(path) {
+  path = normalize_path(path);
+  if (!safe_path(path))
+    return { error: 'invalid_path' };
+
+  try {
+    if (!exists(path).exists)
+      fs.writefile(path, '');
+    return { ok: true };
+  }
+  catch (e) {
+    return { error: String(e) };
+  }
+}
