@@ -1,0 +1,10 @@
+{
+  "luci-app-fileman": {
+    "description": "Grant access to File Manager",
+    "read": {
+      "ubus": {
+        "fileman": [ "list", "stat", "read", "exists", "mkdir", "rm", "mv", "write", "upload", "download", "chmod", "chown" ]
+      }
+    }
+  }
+}
