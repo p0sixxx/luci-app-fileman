@@ -1,19 +1,11 @@
 'use strict';
 'require view';
-'require uci';
 'require rpc';
-'require fs';
 'require ui';
 
 var callList = rpc.declare({
     object: 'fileman',
     method: 'list',
-    params: [ 'path' ]
-});
-
-var callStat = rpc.declare({
-    object: 'fileman',
-    method: 'stat',
     params: [ 'path' ]
 });
 
@@ -47,10 +39,11 @@ var callMv = rpc.declare({
     params: [ 'src', 'dst' ]
 });
 
-function escapeHtml(s) {
-    return String(s || '').replace(/[&<>"]/, function (c) {
-        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
-    });
+function joinPath(base, name) {
+    base = base || '/';
+    if (base !== '/' && base.endsWith('/'))
+        base = base.slice(0, -1);
+    return (base === '/' ? '' : base) + '/' + name;
 }
 
 return view.extend({
@@ -62,14 +55,16 @@ return view.extend({
         var root = E('div', { 'class': 'cbi-map' });
         var toolbar = E('div', { 'class': 'cbi-section' });
         var pathInput = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': '/' });
-        var refreshBtn = E('button', { 'class': 'cbi-button cbi-button-action' }, [ _('Open') ]);
+        var openBtn = E('button', { 'class': 'cbi-button cbi-button-action' }, [ _('Open') ]);
+        var upBtn = E('button', { 'class': 'cbi-button' }, [ _('Up') ]);
         var newDirBtn = E('button', { 'class': 'cbi-button' }, [ _('New folder') ]);
         var newFileBtn = E('button', { 'class': 'cbi-button' }, [ _('New file') ]);
         var tableBox = E('div', { 'class': 'cbi-section-table' });
         var statusBox = E('div', { 'class': 'cbi-section' });
 
         toolbar.appendChild(pathInput);
-        toolbar.appendChild(refreshBtn);
+        toolbar.appendChild(openBtn);
+        toolbar.appendChild(upBtn);
         toolbar.appendChild(newDirBtn);
         toolbar.appendChild(newFileBtn);
         root.appendChild(toolbar);
@@ -78,6 +73,14 @@ return view.extend({
 
         function setStatus(msg) {
             statusBox.textContent = msg || '';
+        }
+
+        function parentPath(path) {
+            if (!path || path === '/')
+                return '/';
+            path = path.replace(/\/+$|\/+$/g, '');
+            var idx = path.lastIndexOf('/');
+            return idx <= 0 ? '/' : path.slice(0, idx);
         }
 
         function renderTable(data) {
@@ -92,53 +95,35 @@ return view.extend({
             var tbody = E('tbody');
             (data.entries || []).forEach(function (e) {
                 var tr = E('tr');
+                var nameCell = E('td');
                 var openLink = E('a', { 'href': '#', 'click': ui.createHandlerFn(this, function () {
                     if (e.type === 'directory') {
                         pathInput.value = e.path;
                         loadPath();
+                    } else {
+                        editFile(e.path);
                     }
                 }) }, [ e.name ]);
+                nameCell.appendChild(openLink);
 
+                var typeCell = E('td', {}, [ e.type || '' ]);
+                var sizeCell = E('td', {}, [ String(e.size || 0) ]);
                 var actions = E('div');
                 var editBtn = E('button', { 'class': 'cbi-button cbi-button-neutral' }, [ _('Edit') ]);
-                var delBtn = E('button', { 'class': 'cbi-button cbi-button-remove' }, [ _('Delete') ]);
                 var renameBtn = E('button', { 'class': 'cbi-button' }, [ _('Rename') ]);
+                var delBtn = E('button', { 'class': 'cbi-button cbi-button-remove' }, [ _('Delete') ]);
 
-                editBtn.addEventListener('click', function () {
-                    callRead(e.path).then(function (res) {
-                        var content = res && res.content ? res.content : '';
-                        var ta = E('textarea', { 'class': 'cbi-input-textarea', 'style': 'width:100%;min-height:18em;' }, [ content ]);
-                        var dlg = ui.showModal(_('Edit file'), [ ta ], {
-                            buttons: [
-                                E('button', { 'class': 'btn cbi-button cbi-button-neutral', 'click': ui.hideModal }, [ _('Cancel') ]),
-                                E('button', { 'class': 'btn cbi-button cbi-button-action', 'click': function () {
-                                    callWrite(e.path, ta.value).then(function () { ui.hideModal(); loadPath(); });
-                                } }, [ _('Save') ])
-                            ]
-                        });
-                    });
-                });
-
-                delBtn.addEventListener('click', function () {
-                    if (!window.confirm(_('Delete ') + e.path + '?'))
-                        return;
-                    callRm(e.path).then(function () { loadPath(); });
-                });
-
-                renameBtn.addEventListener('click', function () {
-                    var dst = window.prompt(_('New name/path'), e.path);
-                    if (!dst)
-                        return;
-                    callMv(e.path, dst).then(function () { loadPath(); });
-                });
+                editBtn.addEventListener('click', function () { editFile(e.path); });
+                renameBtn.addEventListener('click', function () { renameItem(e.path); });
+                delBtn.addEventListener('click', function () { deleteItem(e.path); });
 
                 actions.appendChild(editBtn);
                 actions.appendChild(renameBtn);
                 actions.appendChild(delBtn);
 
-                tr.appendChild(E('td', {}, [ openLink ]));
-                tr.appendChild(E('td', {}, [ e.type || '' ]));
-                tr.appendChild(E('td', {}, [ String(e.size || 0) ]));
+                tr.appendChild(nameCell);
+                tr.appendChild(typeCell);
+                tr.appendChild(sizeCell);
                 tr.appendChild(E('td', {}, [ actions ]));
                 tbody.appendChild(tr);
             }, this);
@@ -155,25 +140,71 @@ return view.extend({
                     tableBox.textContent = '';
                     return;
                 }
-                setStatus(_('Path: ') + res.path);
+                pathInput.value = res.path || p;
+                setStatus(_('Path: ') + (res.path || p));
                 renderTable(res);
             });
         }
 
-        refreshBtn.addEventListener('click', loadPath);
+        function editFile(path) {
+            callRead(path).then(function (res) {
+                if (res && res.error) {
+                    ui.addNotification(null, E('p', {}, [ _('Error: ') + res.error ]));
+                    return;
+                }
+
+                var ta = E('textarea', {
+                    'class': 'cbi-input-textarea',
+                    'style': 'width:100%;min-height:22em;'
+                }, [ res.content || '' ]);
+
+                ui.showModal(_('Edit file'), [ ta ], [
+                    E('button', {
+                        'class': 'btn cbi-button cbi-button-neutral',
+                        'click': ui.hideModal
+                    }, [ _('Cancel') ]),
+                    E('button', {
+                        'class': 'btn cbi-button cbi-button-action',
+                        'click': function () {
+                            callWrite(path, ta.value).then(function () {
+                                ui.hideModal();
+                                loadPath();
+                            });
+                        }
+                    }, [ _('Save') ])
+                ]);
+            });
+        }
+
+        function renameItem(path) {
+            var dst = window.prompt(_('New name/path'), path);
+            if (!dst || dst === path)
+                return;
+            callMv(path, dst).then(function () { loadPath(); });
+        }
+
+        function deleteItem(path) {
+            if (!window.confirm(_('Delete ') + path + '?'))
+                return;
+            callRm(path).then(function () { loadPath(); });
+        }
+
+        openBtn.addEventListener('click', loadPath);
+        upBtn.addEventListener('click', function () {
+            pathInput.value = parentPath(pathInput.value || '/');
+            loadPath();
+        });
         newDirBtn.addEventListener('click', function () {
             var name = window.prompt(_('Folder name'));
             if (!name)
                 return;
-            var p = (pathInput.value || '/').replace(/\/$/, '') + '/' + name;
-            callMkdir(p).then(function () { loadPath(); });
+            callMkdir(joinPath(pathInput.value || '/', name)).then(function () { loadPath(); });
         });
         newFileBtn.addEventListener('click', function () {
             var name = window.prompt(_('File name'));
             if (!name)
                 return;
-            var p = (pathInput.value || '/').replace(/\/$/, '') + '/' + name;
-            callWrite(p, '').then(function () { loadPath(); });
+            callWrite(joinPath(pathInput.value || '/', name), '').then(function () { loadPath(); });
         });
 
         loadPath();
