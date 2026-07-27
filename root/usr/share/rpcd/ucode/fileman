@@ -1,0 +1,281 @@
+'use strict';
+
+import * as fs from 'fs';
+
+const MAX_TRANSFER_SIZE = 1024 * 1024;
+
+function error(code) {
+    return { error: code };
+}
+
+function normalize_path(path) {
+    if (path == null || path == '' || path.indexOf('\0') !== -1 || !path.startsWith('/'))
+        return null;
+
+    const parts = [];
+
+    for (const part in path.split('/')) {
+        if (part == '' || part == '.')
+            continue;
+
+        if (part == '..')
+            return null;
+
+        parts.push(part);
+    }
+
+    return '/' + parts.join('/');
+}
+
+function child_path(path, name) {
+    return path == '/' ? '/' + name : path + '/' + name;
+}
+
+function is_descendant(path, parent) {
+    return path.startsWith(parent + '/');
+}
+
+function file_info(path) {
+    return fs.lstat(path);
+}
+
+function response_stat(path, stat) {
+    return {
+        path: path,
+        type: stat.type,
+        size: stat.size,
+        mtime: stat.mtime,
+        mode: stat.mode
+    };
+}
+
+function read_file(path) {
+    const stat = file_info(path);
+
+    if (!stat)
+        return error('not_found');
+    if (stat.type != 'file')
+        return error('not_regular_file');
+    if (stat.size > MAX_TRANSFER_SIZE)
+        return error('file_too_large');
+
+    const content = fs.readfile(path);
+    return content == null ? error('read_failed') : { path: path, content: content };
+}
+
+function copy_file(source, destination) {
+    const input = fs.open(source, 'r');
+    const output = fs.open(destination, 'w');
+    let copied = true;
+
+    if (!input || !output)
+        copied = false;
+
+    while (copied) {
+        const chunk = input.read(8192);
+
+        if (chunk == null || (chunk != '' && output.write(chunk) != length(chunk))) {
+            copied = false;
+            break;
+        }
+        if (chunk == '')
+            break;
+    }
+
+    if (input)
+        input.close();
+    if (output)
+        output.close();
+
+    if (!copied)
+        fs.unlink(destination);
+
+    return copied;
+}
+
+function copy_entry(source, destination) {
+    const source_stat = file_info(source);
+
+    if (!source_stat || file_info(destination))
+        return false;
+
+    if (source_stat.type == 'file')
+        return copy_file(source, destination);
+
+    if (source_stat.type == 'link') {
+        const target = fs.readlink(source);
+        return target != null && fs.symlink(target, destination) != null;
+    }
+
+    if (source_stat.type != 'directory' || fs.mkdir(destination, 493) == null)
+        return false;
+
+    const names = fs.lsdir(source);
+    if (!names)
+        return false;
+
+    for (const name in names) {
+        if (!copy_entry(child_path(source, name), child_path(destination, name)))
+            return false;
+    }
+
+    return true;
+}
+
+function remove_entry(path) {
+    const stat = file_info(path);
+
+    if (!stat)
+        return false;
+
+    if (stat.type == 'directory') {
+        const names = fs.lsdir(path);
+        if (!names)
+            return false;
+
+        for (const name in names) {
+            if (!remove_entry(child_path(path, name)))
+                return false;
+        }
+
+        return fs.rmdir(path) != null;
+    }
+
+    return (stat.type == 'file' || stat.type == 'link') && fs.unlink(path) != null;
+}
+
+function list(path) {
+    path = normalize_path(path || '/');
+    if (!path)
+        return error('invalid_path');
+
+    const directory = file_info(path);
+    if (!directory)
+        return error('not_found');
+    if (directory.type != 'directory')
+        return error('not_directory');
+
+    const names = fs.lsdir(path);
+    if (!names)
+        return error('list_failed');
+
+    const entries = [];
+
+    for (const name in names) {
+        const entry_path = child_path(path, name);
+        const stat = file_info(entry_path);
+
+        if (stat)
+            entries.push(response_stat(entry_path, stat));
+    }
+
+    return { path: path, entries: entries };
+}
+
+function stat(path) {
+    path = normalize_path(path);
+    if (!path)
+        return error('invalid_path');
+
+    const result = file_info(path);
+    return result ? response_stat(path, result) : error('not_found');
+}
+
+function read(path) {
+    path = normalize_path(path);
+    return path ? read_file(path) : error('invalid_path');
+}
+
+function write(path, content) {
+    path = normalize_path(path);
+    if (!path || path == '/')
+        return error('invalid_path');
+    if (length(content) > MAX_TRANSFER_SIZE)
+        return error('file_too_large');
+
+    const existing = file_info(path);
+    if (existing && existing.type != 'file')
+        return error('not_regular_file');
+
+    return fs.writefile(path, content) == null ? error('write_failed') : { ok: true };
+}
+
+function mkdir(path) {
+    path = normalize_path(path);
+    if (!path || path == '/' || file_info(path))
+        return error('invalid_path');
+
+    return fs.mkdir(path, 493) == null ? error('mkdir_failed') : { ok: true };
+}
+
+function rm(path) {
+    path = normalize_path(path);
+    if (!path || path == '/')
+        return error('invalid_path');
+
+    return remove_entry(path) ? { ok: true } : error('remove_failed');
+}
+
+function mv(source, destination) {
+    source = normalize_path(source);
+    destination = normalize_path(destination);
+    if (!source || !destination || source == '/' || destination == '/' || file_info(destination))
+        return error('invalid_path');
+
+    const source_stat = file_info(source);
+    if (!source_stat)
+        return error('not_found');
+    if (source_stat.type == 'directory' && is_descendant(destination, source))
+        return error('invalid_destination');
+
+    return fs.rename(source, destination) == null ? error('move_failed') : { ok: true };
+}
+
+function copy(source, destination) {
+    source = normalize_path(source);
+    destination = normalize_path(destination);
+    if (!source || !destination || source == '/' || destination == '/' || source == destination || file_info(destination))
+        return error('invalid_path');
+
+    const source_stat = file_info(source);
+    if (!source_stat)
+        return error('not_found');
+    if (source_stat.type == 'directory' && is_descendant(destination, source))
+        return error('invalid_destination');
+
+    if (copy_entry(source, destination))
+        return { ok: true };
+
+    if (file_info(destination))
+        remove_entry(destination);
+
+    return error('copy_failed');
+}
+
+function touch(path) {
+    path = normalize_path(path);
+    if (!path || path == '/' || file_info(path))
+        return error('invalid_path');
+
+    return fs.writefile(path, '') == null ? error('write_failed') : { ok: true };
+}
+
+function download(path) {
+    path = normalize_path(path);
+    return path ? read_file(path) : error('invalid_path');
+}
+
+return {
+    fileman: {
+        list: { args: { path: '' }, call: function(request) { return list(request.args.path); } },
+        stat: { args: { path: '' }, call: function(request) { return stat(request.args.path); } },
+        read: { args: { path: '' }, call: function(request) { return read(request.args.path); } },
+        write: { args: { path: '', content: '' }, call: function(request) { return write(request.args.path, request.args.content); } },
+        mkdir: { args: { path: '' }, call: function(request) { return mkdir(request.args.path); } },
+        rm: { args: { path: '' }, call: function(request) { return rm(request.args.path); } },
+        mv: { args: { src: '', dst: '' }, call: function(request) { return mv(request.args.src, request.args.dst); } },
+        copy: { args: { src: '', dst: '' }, call: function(request) { return copy(request.args.src, request.args.dst); } },
+        touch: { args: { path: '' }, call: function(request) { return touch(request.args.path); } },
+        download: { args: { path: '' }, call: function(request) { return download(request.args.path); } }
+    }
+};
