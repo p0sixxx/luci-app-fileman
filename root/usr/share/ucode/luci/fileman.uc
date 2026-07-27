@@ -36,6 +36,11 @@ function parent_path(path) {
   return idx <= 0 ? '/' : path.slice(0, idx);
 }
 
+function is_file(path) {
+  let st = fs.stat(path);
+  return st && st.type !== 'directory';
+}
+
 export function list(path) {
   path = normalize_path(path || '/');
   if (!safe_path(path))
@@ -205,6 +210,21 @@ export function touch(path) {
     if (!exists(path).exists)
       fs.writefile(path, '');
     return { ok: true };
+  }
+  catch (e) {
+    return { error: String(e) };
+  }
+}
+
+export function download(path) {
+  path = normalize_path(path);
+  if (!safe_path(path))
+    return { error: 'invalid_path' };
+
+  try {
+    if (!is_file(path))
+      return { error: 'not_a_file' };
+    return { path: path, content: fs.readfile(path) };
   }
   catch (e) {
     return { error: String(e) };
