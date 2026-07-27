@@ -1,0 +1,285 @@
+.fileman-app {
+    max-width: none;
+}
+
+.fileman-toolbar,
+.fileman-navigation {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.fileman-toolbar {
+    margin-bottom: 1rem;
+}
+
+.fileman-navigation {
+    margin-bottom: 0.5rem;
+}
+
+.fileman-navigation .cbi-input-text {
+    flex: 1 1 22rem;
+    min-width: 12rem;
+}
+
+.fileman-status {
+    margin: 0.5rem 0;
+    min-height: 1.4em;
+}
+
+.fileman-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 0 0 1rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.fileman-breadcrumb-item {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-decoration: none;
+}
+
+.fileman-breadcrumb-item:hover,
+.fileman-breadcrumb-item:focus {
+    text-decoration: underline;
+    outline: none;
+}
+
+.fileman-breadcrumb-separator {
+    color: #888;
+    user-select: none;
+}
+
+.fileman-breadcrumb-current {
+    color: #444;
+    cursor: default;
+    font-weight: 600;
+}
+
+.fileman-table {
+    overflow-x: auto;
+}
+
+.fileman-table table {
+    margin-bottom: 0;
+}
+
+.fileman-table tbody tr {
+    cursor: pointer;
+    transition: background-color .12s ease;
+}
+
+.fileman-table tbody tr:hover {
+    background: rgba(0, 0, 0, .03);
+}
+
+.fileman-table tbody tr.fileman-selected {
+    background: var(--primary, #e8f3ff);
+}
+
+.fileman-table tbody tr.fileman-selected:hover {
+    background: var(--primary, #dcecff);
+}
+
+.fileman-sort-button {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+}
+
+.fileman-icon {
+    display: inline-block;
+    text-align: center;
+    width: 1.6em;
+}
+
+.fileman-editor {
+    box-sizing: border-box;
+    min-height: 22em;
+    width: 100%;
+}
+
+@media (max-width: 640px) {
+
+    .fileman-toolbar,
+    .fileman-navigation {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .fileman-toolbar .cbi-button,
+    .fileman-navigation .cbi-button,
+    .fileman-navigation .cbi-input-text {
+        width: 100%;
+    }
+
+    .fileman-breadcrumb {
+        font-size: 0.9rem;
+    }
+
+    .fileman-table th:nth-child(3),
+    .fileman-table td:nth-child(3),
+    .fileman-table th:nth-child(4),
+    .fileman-table td:nth-child(4) {
+        display: none;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+
+    .fileman-breadcrumb-separator {
+        color: #999;
+    }
+
+    .fileman-breadcrumb-current {
+        color: #ddd;
+    }
+
+    .fileman-table tbody tr:hover {
+        background: rgba(255, 255, 255, .05);
+    }
+
+}
+
+/* ===========================
+ * Context menu
+ * =========================== */
+
+.fileman-context-menu {
+    position: fixed;
+    z-index: 99999;
+
+    display: flex;
+    flex-direction: column;
+
+    min-width: 220px;
+    max-width: 320px;
+
+    margin: 0;
+    padding: 4px 0;
+
+    background: #ffffff;
+    border: 1px solid #c8c8c8;
+    border-radius: 6px;
+
+    box-shadow:
+        0 4px 16px rgba(0, 0, 0, .18),
+        0 1px 3px rgba(0, 0, 0, .08);
+
+    overflow: hidden;
+
+    user-select: none;
+
+    transform-origin: top left;
+    will-change: transform, opacity;
+
+    animation: filemanContextOpen .08s ease-out;
+}
+
+.fileman-context-menu[hidden] {
+    display: none !important;
+}
+
+.fileman-context-menu * {
+    box-sizing: border-box;
+}
+
+.fileman-context-item {
+    display: block;
+    width: 100%;
+
+    margin: 0;
+    padding: 8px 14px;
+
+    background: transparent;
+    border: 0;
+
+    color: inherit;
+    font: inherit;
+    line-height: 1.4;
+    text-align: left;
+    white-space: nowrap;
+
+    cursor: pointer;
+    user-select: none;
+
+    transition: background-color .12s ease, color .12s ease;
+}
+
+.fileman-context-item:hover,
+.fileman-context-item:focus {
+    background: rgba(0, 123, 255, .08);
+    outline: none;
+}
+
+.fileman-context-item:active {
+    background: rgba(0, 123, 255, .14);
+}
+
+.fileman-context-item:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.fileman-context-item + .fileman-context-item {
+    border-top: 1px solid rgba(0, 0, 0, .05);
+}
+
+/* Dark mode */
+
+@media (prefers-color-scheme: dark) {
+
+    .fileman-context-menu {
+        background: #2b2b2b;
+        border-color: #4b4b4b;
+
+        box-shadow:
+            0 6px 18px rgba(0, 0, 0, .45),
+            0 1px 2px rgba(0, 0, 0, .30);
+    }
+
+    .fileman-context-item {
+        color: #eeeeee;
+    }
+
+    .fileman-context-item:hover,
+    .fileman-context-item:focus {
+        background: rgba(255, 255, 255, .08);
+    }
+
+    .fileman-context-item:active {
+        background: rgba(255, 255, 255, .14);
+    }
+
+    .fileman-context-item + .fileman-context-item {
+        border-top-color: rgba(255, 255, 255, .08);
+    }
+}
+
+@keyframes filemanContextOpen {
+
+    from {
+        opacity: 0;
+        transform: scale(.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
